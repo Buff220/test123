@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>VR Camera Overlay (Fixed)</title>
+<title>Fixed VR Camera Overlay</title>
 
 <style>
 html, body {
@@ -16,18 +16,16 @@ html, body {
     top: 10px;
     left: 10px;
     z-index: 10;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0.7);
     color: white;
     padding: 10px;
     font-family: sans-serif;
 }
 
-#canvas {
+canvas {
     width: 100vw;
     height: 100vh;
-    display: block;
 }
-
 </style>
 </head>
 
@@ -36,21 +34,21 @@ html, body {
 <div id="ui">
 <input type="file" id="file" accept="video/*"><br><br>
 
-X <input type="range" id="x" min="0" max="1280" value="200"><br>
-Y <input type="range" id="y" min="0" max="720" value="200"><br>
-Size <input type="range" id="size" min="100" max="800" value="300"><br>
-Blur <input type="range" id="blur" min="0" max="30" value="0"><br>
+X <input type="range" id="x" min="0" max="1000" value="200"><br>
+Y <input type="range" id="y" min="0" max="800" value="200"><br>
+Size <input type="range" id="size" min="50" max="800" value="300"><br>
+Blur <input type="range" id="blur" min="0" max="20" value="0"><br>
 Opacity <input type="range" id="opacity" min="0" max="100" value="100"><br>
 </div>
 
-<canvas id="canvas"></canvas>
+<canvas id="c"></canvas>
 
-<video id="cam" autoplay playsinline muted style="display:none"></video>
-<video id="vid" loop playsinline style="display:none"></video>
+<video id="cam" autoplay playsinline muted></video>
+<video id="vid" autoplay loop playsinline muted></video>
 
 <script>
 
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 
 const cam = document.getElementById("cam");
@@ -63,60 +61,94 @@ function resize(){
 window.onresize = resize;
 resize();
 
-async function startCamera(){
-    const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-        audio: false
-    });
+//
+// 1. CAMERA (BACK CAMERA FIXED)
+//
+async function startCam(){
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: { ideal: "environment" }
+            },
+            audio: false
+        });
 
-    cam.srcObject = stream;
+        cam.srcObject = stream;
+
+        await cam.play();
+    } catch (e) {
+        console.log("Camera error:", e);
+    }
 }
-startCamera();
 
-// load video from storage
+startCam();
+
+//
+// 2. VIDEO LOAD FIX (IMPORTANT IOS FIXES)
+//
 document.getElementById("file").onchange = async (e) => {
     const file = e.target.files[0];
+
     vid.src = URL.createObjectURL(file);
+    vid.loop = true;
+    vid.muted = false;
+    vid.playsInline = true;
 
     try {
-        await vid.play(); // important: must come from user gesture
-    } catch (err) {
-        console.log("Autoplay blocked:", err);
+        await vid.play();
+    } catch (e) {
+        console.log("Video play blocked:", e);
     }
 };
 
+//
+// 3. DRAW LOOP (ROBUST IOS SAFE)
+//
 function draw(){
 
     const w = canvas.width;
     const h = canvas.height;
+    const half = w / 2;
 
-    // split VR view
-    const halfW = w / 2;
+    ctx.clearRect(0, 0, w, h);
 
-    [0, halfW].forEach(offsetX => {
+    const vx = parseInt(x.value);
+    const vy = parseInt(y.value);
+    const vs = parseInt(size.value);
+    const blurVal = blur.value;
+    const alpha = opacity.value / 100;
 
-        // camera background
-        if (cam.readyState >= 2) {
-            ctx.drawImage(cam, offsetX, 0, halfW, h);
+    for (let side = 0; side < 2; side++) {
+
+        const offset = side * half;
+
+        // CAMERA (always draw if ready)
+        if (cam.videoWidth > 0) {
+            ctx.drawImage(cam, offset, 0, half, h);
+        } else {
+            // fallback background
+            ctx.fillStyle = "black";
+            ctx.fillRect(offset, 0, half, h);
         }
 
-        // overlay video
-        if (vid.readyState >= 2) {
-
-            const ox = parseInt(x.value);
-            const oy = parseInt(y.value);
-            const size = parseInt(size.value);
+        // VIDEO OVERLAY (only if actually playing)
+        if (vid.videoWidth > 0 && !vid.paused) {
 
             ctx.save();
-            ctx.filter = `blur(${blur.value}px)`;
-            ctx.globalAlpha = opacity.value / 100;
+            ctx.filter = `blur(${blurVal}px)`;
+            ctx.globalAlpha = alpha;
 
-            ctx.drawImage(vid, offsetX + ox, oy, size, size * 0.6);
+            ctx.drawImage(
+                vid,
+                offset + vx,
+                vy,
+                vs,
+                vs * 0.6
+            );
 
             ctx.restore();
         }
-
-    });
+    }
 
     requestAnimationFrame(draw);
 }
