@@ -2,138 +2,126 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>VR Camera Overlay</title>
+<title>VR Camera Overlay (Fixed)</title>
 
 <style>
-html, body{
-    margin:0;
-    overflow:hidden;
-    background:black;
+html, body {
+    margin: 0;
+    overflow: hidden;
+    background: black;
 }
 
-#controls{
-    position:fixed;
-    top:10px;
-    left:10px;
-    z-index:999;
-    background:rgba(0,0,0,0.7);
-    color:white;
-    padding:10px;
+#ui {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 10;
+    background: rgba(0,0,0,0.6);
+    color: white;
+    padding: 10px;
+    font-family: sans-serif;
 }
 
-#vr{
-    display:flex;
-    width:100vw;
-    height:100vh;
+#canvas {
+    width: 100vw;
+    height: 100vh;
+    display: block;
 }
 
-.eye{
-    width:50vw;
-    height:100vh;
-    position:relative;
-    overflow:hidden;
-}
-
-.camera{
-    position:absolute;
-    width:100%;
-    height:100%;
-    object-fit:cover;
-}
-
-.overlay{
-    position:absolute;
-    top:100px;
-    left:100px;
-    width:300px;
-}
 </style>
 </head>
+
 <body>
 
-<div id="controls">
-<input type="file" id="videoInput" accept="video/*"><br><br>
+<div id="ui">
+<input type="file" id="file" accept="video/*"><br><br>
 
-Size
-<input type="range" id="size" min="100" max="1000" value="300"><br>
-
-Blur
-<input type="range" id="blur" min="0" max="30" value="0"><br>
-
-Opacity
-<input type="range" id="opacity" min="0" max="100" value="100"><br>
-
-X
-<input type="range" id="x" min="0" max="1000" value="100"><br>
-
-Y
-<input type="range" id="y" min="0" max="1000" value="100"><br>
+X <input type="range" id="x" min="0" max="1280" value="200"><br>
+Y <input type="range" id="y" min="0" max="720" value="200"><br>
+Size <input type="range" id="size" min="100" max="800" value="300"><br>
+Blur <input type="range" id="blur" min="0" max="30" value="0"><br>
+Opacity <input type="range" id="opacity" min="0" max="100" value="100"><br>
 </div>
 
-<div id="vr">
+<canvas id="canvas"></canvas>
 
-<div class="eye">
-<video class="camera" id="cam1" autoplay playsinline muted></video>
-<video class="overlay" id="ov1" controls loop></video>
-</div>
-
-<div class="eye">
-<video class="camera" id="cam2" autoplay playsinline muted></video>
-<video class="overlay" id="ov2" controls loop></video>
-</div>
-
-</div>
+<video id="cam" autoplay playsinline muted style="display:none"></video>
+<video id="vid" loop playsinline style="display:none"></video>
 
 <script>
 
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const cam = document.getElementById("cam");
+const vid = document.getElementById("vid");
+
+function resize(){
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.onresize = resize;
+resize();
+
 async function startCamera(){
-    let stream = await navigator.mediaDevices.getUserMedia({
-        video:{
-            facingMode:"user"
-        },
-        audio:false
+    const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+        audio: false
     });
 
-    cam1.srcObject = stream;
-    cam2.srcObject = stream;
+    cam.srcObject = stream;
 }
-
 startCamera();
 
-videoInput.onchange=e=>{
-    let file=e.target.files[0];
-    let url=URL.createObjectURL(file);
+// load video from storage
+document.getElementById("file").onchange = async (e) => {
+    const file = e.target.files[0];
+    vid.src = URL.createObjectURL(file);
 
-    ov1.src=url;
-    ov2.src=url;
-
-    ov1.play();
-    ov2.play();
+    try {
+        await vid.play(); // important: must come from user gesture
+    } catch (err) {
+        console.log("Autoplay blocked:", err);
+    }
 };
 
-function updateOverlay(){
+function draw(){
 
-    let w=size.value+"px";
-    let b=blur.value+"px";
-    let op=opacity.value/100;
-    let xx=x.value+"px";
-    let yy=y.value+"px";
+    const w = canvas.width;
+    const h = canvas.height;
 
-    [ov1,ov2].forEach(v=>{
-        v.style.width=w;
-        v.style.filter=`blur(${b})`;
-        v.style.opacity=op;
-        v.style.left=xx;
-        v.style.top=yy;
+    // split VR view
+    const halfW = w / 2;
+
+    [0, halfW].forEach(offsetX => {
+
+        // camera background
+        if (cam.readyState >= 2) {
+            ctx.drawImage(cam, offsetX, 0, halfW, h);
+        }
+
+        // overlay video
+        if (vid.readyState >= 2) {
+
+            const ox = parseInt(x.value);
+            const oy = parseInt(y.value);
+            const size = parseInt(size.value);
+
+            ctx.save();
+            ctx.filter = `blur(${blur.value}px)`;
+            ctx.globalAlpha = opacity.value / 100;
+
+            ctx.drawImage(vid, offsetX + ox, oy, size, size * 0.6);
+
+            ctx.restore();
+        }
+
     });
 
+    requestAnimationFrame(draw);
 }
 
-[size,blur,opacity,x,y].forEach(i=>{
-    i.oninput=updateOverlay;
-});
-
-updateOverlay();
+draw();
 
 </script>
 
