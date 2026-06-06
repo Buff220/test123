@@ -103,6 +103,25 @@ canvas {
     min-height: 16px;
 }
 
+#unmuteBtn {
+    display: none;
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    background: rgba(0,0,0,0.85);
+    color: #0f0;
+    border: 2px solid #0f0;
+    padding: 14px 32px;
+    font-size: 20px;
+    font-family: 'Courier New', monospace;
+    border-radius: 8px;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    box-shadow: 0 0 20px #0f04;
+}
+
 /* Center divider line for VR mode reference */
 #divider {
     position: fixed;
@@ -131,6 +150,8 @@ canvas {
     <label>Opacity <input type="range" id="ropacity" min="0" max="100" value="100"></label>
     <div id="status">No video loaded</div>
 </div>
+
+<button id="unmuteBtn">🔊 TAP TO UNMUTE</button>
 
 <canvas id="c"></canvas>
 
@@ -193,12 +214,20 @@ document.getElementById('fileInput').addEventListener('change', async (e) => {
         try {
             await vid.play();
             status.textContent = '▶ ' + file.name.slice(0, 22);
+            // Show unmute button — iOS requires a tap to enable audio
+            unmuteBtn.style.display = 'block';
         } catch (err) {
             status.textContent = 'Tap screen to play';
-            // Fallback: play on next user tap
             document.addEventListener('touchstart', () => vid.play(), { once: true });
         }
     }, { once: true });
+});
+
+// ── Unmute (iOS requires user gesture for audio) ─────────
+const unmuteBtn = document.getElementById('unmuteBtn');
+unmuteBtn.addEventListener('click', () => {
+    vid.muted = false;
+    unmuteBtn.style.display = 'none';
 });
 
 // ── Toggle UI ────────────────────────────────────────────
