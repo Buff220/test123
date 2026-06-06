@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>VR Camera Overlay</title>
+
+<style>
+html, body{
+    margin:0;
+    overflow:hidden;
+    background:black;
+}
+
+#controls{
+    position:fixed;
+    top:10px;
+    left:10px;
+    z-index:999;
+    background:rgba(0,0,0,0.7);
+    color:white;
+    padding:10px;
+}
+
+#vr{
+    display:flex;
+    width:100vw;
+    height:100vh;
+}
+
+.eye{
+    width:50vw;
+    height:100vh;
+    position:relative;
+    overflow:hidden;
+}
+
+.camera{
+    position:absolute;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+.overlay{
+    position:absolute;
+    top:100px;
+    left:100px;
+    width:300px;
+}
+</style>
+</head>
+<body>
+
+<div id="controls">
+<input type="file" id="videoInput" accept="video/*"><br><br>
+
+Size
+<input type="range" id="size" min="100" max="1000" value="300"><br>
+
+Blur
+<input type="range" id="blur" min="0" max="30" value="0"><br>
+
+Opacity
+<input type="range" id="opacity" min="0" max="100" value="100"><br>
+
+X
+<input type="range" id="x" min="0" max="1000" value="100"><br>
+
+Y
+<input type="range" id="y" min="0" max="1000" value="100"><br>
+</div>
+
+<div id="vr">
+
+<div class="eye">
+<video class="camera" id="cam1" autoplay playsinline muted></video>
+<video class="overlay" id="ov1" controls loop></video>
+</div>
+
+<div class="eye">
+<video class="camera" id="cam2" autoplay playsinline muted></video>
+<video class="overlay" id="ov2" controls loop></video>
+</div>
+
+</div>
+
+<script>
+
+async function startCamera(){
+    let stream = await navigator.mediaDevices.getUserMedia({
+        video:{
+            facingMode:"user"
+        },
+        audio:false
+    });
+
+    cam1.srcObject = stream;
+    cam2.srcObject = stream;
+}
+
+startCamera();
+
+videoInput.onchange=e=>{
+    let file=e.target.files[0];
+    let url=URL.createObjectURL(file);
+
+    ov1.src=url;
+    ov2.src=url;
+
+    ov1.play();
+    ov2.play();
+};
+
+function updateOverlay(){
+
+    let w=size.value+"px";
+    let b=blur.value+"px";
+    let op=opacity.value/100;
+    let xx=x.value+"px";
+    let yy=y.value+"px";
+
+    [ov1,ov2].forEach(v=>{
+        v.style.width=w;
+        v.style.filter=`blur(${b})`;
+        v.style.opacity=op;
+        v.style.left=xx;
+        v.style.top=yy;
+    });
+
+}
+
+[size,blur,opacity,x,y].forEach(i=>{
+    i.oninput=updateOverlay;
+});
+
+updateOverlay();
+
+</script>
+
+</body>
+</html>
