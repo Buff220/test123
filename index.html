@@ -2,160 +2,257 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Fixed VR Camera Overlay</title>
-
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>VR Camera Overlay</title>
 <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
 html, body {
-    margin: 0;
+    width: 100%; height: 100%;
     overflow: hidden;
-    background: black;
+    background: #000;
+    font-family: 'Courier New', monospace;
+}
+
+canvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    object-fit: cover;
 }
 
 #ui {
     position: fixed;
-    top: 10px;
-    left: 10px;
-    z-index: 10;
-    background: rgba(0,0,0,0.7);
-    color: white;
-    padding: 10px;
-    font-family: sans-serif;
+    top: 0; left: 0;
+    z-index: 20;
+    background: rgba(0,0,0,0.75);
+    color: #0f0;
+    padding: 12px 14px;
+    font-size: 13px;
+    border-right: 1px solid #0f04;
+    border-bottom: 1px solid #0f04;
+    border-radius: 0 0 10px 0;
+    max-width: 220px;
+    transition: opacity 0.3s;
 }
 
-canvas {
-    width: 100vw;
-    height: 100vh;
+#ui.hidden { opacity: 0; pointer-events: none; }
+
+#ui label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin: 5px 0;
+    white-space: nowrap;
+}
+
+#ui input[type=range] {
+    -webkit-appearance: none;
+    width: 110px;
+    height: 4px;
+    background: #0f04;
+    outline: none;
+    border-radius: 2px;
+    accent-color: #0f0;
+}
+
+#ui input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #0f0;
+    cursor: pointer;
+}
+
+#fileBtn {
+    display: block;
+    width: 100%;
+    padding: 7px 0;
+    margin-bottom: 8px;
+    background: #0f01;
+    border: 1px solid #0f0;
+    color: #0f0;
+    font-family: inherit;
+    font-size: 13px;
+    border-radius: 4px;
+    cursor: pointer;
+    text-align: center;
+    letter-spacing: 0.05em;
+}
+
+#fileInput { display: none; }
+
+#toggleUI {
+    position: fixed;
+    top: 8px; right: 8px;
+    z-index: 30;
+    background: rgba(0,0,0,0.6);
+    color: #0f0;
+    border: 1px solid #0f04;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 18px;
+    cursor: pointer;
+}
+
+#status {
+    font-size: 11px;
+    color: #0f08;
+    margin-top: 6px;
+    min-height: 16px;
+}
+
+/* Center divider line for VR mode reference */
+#divider {
+    position: fixed;
+    top: 0; left: 50%;
+    width: 1px; height: 100%;
+    background: #0f02;
+    pointer-events: none;
+    z-index: 5;
 }
 </style>
 </head>
-
 <body>
 
-<div id="ui">
-<input type="file" id="file" accept="video/*"><br><br>
+<div id="divider"></div>
 
-X <input type="range" id="x" min="0" max="1000" value="200"><br>
-Y <input type="range" id="y" min="0" max="800" value="200"><br>
-Size <input type="range" id="size" min="50" max="800" value="300"><br>
-Blur <input type="range" id="blur" min="0" max="20" value="0"><br>
-Opacity <input type="range" id="opacity" min="0" max="100" value="100"><br>
+<button id="toggleUI">☰</button>
+
+<div id="ui">
+    <button id="fileBtn">📁 Choose Video</button>
+    <input type="file" id="fileInput" accept="video/*">
+
+    <label>X <input type="range" id="rx" min="-50" max="150" value="25"></label>
+    <label>Y <input type="range" id="ry" min="-50" max="150" value="25"></label>
+    <label>W% <input type="range" id="rw" min="10" max="100" value="50"></label>
+    <label>Blur <input type="range" id="rblur" min="0" max="20" value="0"></label>
+    <label>Opacity <input type="range" id="ropacity" min="0" max="100" value="100"></label>
+    <div id="status">No video loaded</div>
 </div>
 
 <canvas id="c"></canvas>
 
-<video id="cam" autoplay playsinline muted></video>
-<video id="vid" autoplay loop playsinline muted></video>
+<video id="cam"    autoplay playsinline muted style="display:none"></video>
+<video id="vid"    autoplay loop playsinline muted style="display:none"></video>
 
 <script>
+const canvas  = document.getElementById('c');
+const ctx     = canvas.getContext('2d');
+const cam     = document.getElementById('cam');
+const vid     = document.getElementById('vid');
+const status  = document.getElementById('status');
 
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-
-const cam = document.getElementById("cam");
-const vid = document.getElementById("vid");
-
-function resize(){
-    canvas.width = window.innerWidth;
+// ── Resize ──────────────────────────────────────────────
+function resize() {
+    canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
 }
-window.onresize = resize;
+window.addEventListener('resize', resize);
 resize();
 
-//
-// 1. CAMERA (BACK CAMERA FIXED)
-//
-async function startCam(){
+// ── Camera (back-facing) ─────────────────────────────────
+async function startCam() {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: { ideal: "environment" }
-            },
+            video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 } },
             audio: false
         });
-
         cam.srcObject = stream;
-
         await cam.play();
     } catch (e) {
-        console.log("Camera error:", e);
+        status.textContent = 'Cam error: ' + e.message;
     }
 }
-
 startCam();
 
-//
-// 2. VIDEO LOAD FIX (IMPORTANT IOS FIXES)
-//
-document.getElementById("file").onchange = async (e) => {
-    const file = e.target.files[0];
+// ── File picker (button triggers hidden input) ───────────
+document.getElementById('fileBtn').addEventListener('click', () => {
+    document.getElementById('fileInput').click();
+});
 
-    vid.src = URL.createObjectURL(file);
-    vid.loop = true;
-    vid.muted = false;
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    status.textContent = 'Loading…';
+
+    // Revoke old object URL to free memory
+    if (vid.src) URL.revokeObjectURL(vid.src);
+
+    vid.src      = URL.createObjectURL(file);
+    vid.loop     = true;
+    vid.muted    = true;   // MUST be muted for iOS autoplay
     vid.playsInline = true;
 
-    try {
-        await vid.play();
-    } catch (e) {
-        console.log("Video play blocked:", e);
-    }
-};
+    vid.load();            // Explicit load() is key on iOS
 
-//
-// 3. DRAW LOOP (ROBUST IOS SAFE)
-//
-function draw(){
+    // play() after load event is more reliable than right away
+    vid.addEventListener('loadeddata', async () => {
+        try {
+            await vid.play();
+            status.textContent = '▶ ' + file.name.slice(0, 22);
+        } catch (err) {
+            status.textContent = 'Tap screen to play';
+            // Fallback: play on next user tap
+            document.addEventListener('touchstart', () => vid.play(), { once: true });
+        }
+    }, { once: true });
+});
 
-    const w = canvas.width;
-    const h = canvas.height;
-    const half = w / 2;
+// ── Toggle UI ────────────────────────────────────────────
+document.getElementById('toggleUI').addEventListener('click', () => {
+    document.getElementById('ui').classList.toggle('hidden');
+});
 
-    ctx.clearRect(0, 0, w, h);
+// ── Draw Loop ────────────────────────────────────────────
+function draw() {
+    const W = canvas.width;
+    const H = canvas.height;
+    const half = W / 2;
 
-    const vx = parseInt(x.value);
-    const vy = parseInt(y.value);
-    const vs = parseInt(size.value);
-    const blurVal = blur.value;
-    const alpha = opacity.value / 100;
+    ctx.clearRect(0, 0, W, H);
+
+    // Sliders: X/Y are % of half-width & height; W is % of half-width
+    const xPct      = parseInt(document.getElementById('rx').value) / 100;
+    const yPct      = parseInt(document.getElementById('ry').value) / 100;
+    const wPct      = parseInt(document.getElementById('rw').value) / 100;
+    const blurVal   = document.getElementById('rblur').value;
+    const alpha     = document.getElementById('ropacity').value / 100;
+
+    const vidW = half * wPct;
+    const vidH = vid.videoWidth > 0
+        ? vidW * (vid.videoHeight / vid.videoWidth)
+        : vidW * 0.5625; // default 16:9 fallback
+
+    const vx = half * xPct;
+    const vy = H    * yPct;
 
     for (let side = 0; side < 2; side++) {
+        const ox = side * half; // horizontal offset for this eye
 
-        const offset = side * half;
-
-        // CAMERA (always draw if ready)
-        if (cam.videoWidth > 0) {
-            ctx.drawImage(cam, offset, 0, half, h);
+        // Draw camera feed
+        if (cam.readyState >= 2) {
+            ctx.drawImage(cam, ox, 0, half, H);
         } else {
-            // fallback background
-            ctx.fillStyle = "black";
-            ctx.fillRect(offset, 0, half, h);
+            ctx.fillStyle = '#111';
+            ctx.fillRect(ox, 0, half, H);
         }
 
-        // VIDEO OVERLAY (only if actually playing)
-        if (vid.videoWidth > 0 && !vid.paused) {
-
+        // Draw video overlay
+        if (vid.readyState >= 2 && !vid.paused && !vid.ended) {
             ctx.save();
-            ctx.filter = `blur(${blurVal}px)`;
+            if (parseFloat(blurVal) > 0) ctx.filter = `blur(${blurVal}px)`;
             ctx.globalAlpha = alpha;
-
-            ctx.drawImage(
-                vid,
-                offset + vx,
-                vy,
-                vs,
-                vs * 0.6
-            );
-
+            ctx.drawImage(vid, ox + vx, vy, vidW, vidH);
             ctx.restore();
         }
     }
 
     requestAnimationFrame(draw);
 }
-
 draw();
-
 </script>
-
 </body>
 </html>
